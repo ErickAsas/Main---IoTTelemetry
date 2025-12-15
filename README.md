@@ -54,9 +54,9 @@ This project ensures your ESP32 devices always run the latest firmware directly 
 1️⃣ What you should already have
 
 Confirm these are done (no need to answer yet, just for alignment):
-✅ A GitHub repository created
-✅ Your ESP32 firmware builds a .bin file
-✅ You can push commits to the repo from VS Code / PlatformIO
+- **✅ A GitHub repository created**
+- **✅ Your ESP32 firmware builds a .bin file**
+- **✅ You can push commits to the repo from VS Code / PlatformIO**  
 
 2️⃣ Why GitHub Releases (important for OTA)
 For OTA, Releases are better than normal repo files because:
