@@ -59,11 +59,10 @@ Confirm these are done (no need to answer yet, just for alignment):
 - **✅ You can push commits to the repo from VS Code / PlatformIO**  
 
 2️⃣ Why GitHub Releases (important for OTA)
-For OTA, Releases are better than normal repo files because:
-Stable, versioned URLs
-Public binary hosting (no auth needed)
-Easy version comparison (v1.0.3, v1.0.4, etc.)
-Works perfectly with HTTPClient / Update.h
+- **For OTA, Releases are better than normal repo files because:**
+  - **Public binary hosting (no auth needed)**
+  - **Easy version comparison (v1.0.3, v1.0.4, etc.)**
+  - **Works perfectly with HTTPClient / Update.h**
 
 Your ESP32 will typically download from a URL like:
 https://github.com/<user>/<repo>/releases/download/v1.0.3/firmware.bin
