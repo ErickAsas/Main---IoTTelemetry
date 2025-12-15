@@ -42,7 +42,8 @@ This project ensures your ESP32 devices always run the latest firmware directly 
 1. Clone this repository to your Arduino or PlatformIO workspace.  
 2. Configure WiFi credentials and OTA URLs in the source code.  
 3. Upload firmware to your ESP32 device.  
-4. Monitor Serial logs for version and OTA status.  
+4. Monitor Serial logs for version and OTA status.
+  - Note: We have included the OTARemote.ino sketch to demonstrate the Arduino side of OTA updates, making it easy to test and understand the update flow.
 
 ---
 
