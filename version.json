@@ -1,6 +1,6 @@
 {
-  "version": "2.1.0",
-  "tag": "2.1.0",
+  "version": "4.1.2",
+  "tag": "4.1.2",
   "bin": "firmware.bin",
   "notes": "Bug fixes and OTA stability improvements"
 }
