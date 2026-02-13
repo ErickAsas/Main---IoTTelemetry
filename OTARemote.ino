@@ -59,9 +59,10 @@ Preferences prefs;               // for storing lastEqID persistently
 // ============================================================================
 // 1. System / Device / Time / Reset
 // ============================================================================
-#define FW_VERSION "4.1.2"
-String remoteVersionUrl = "https://appgate.philcom.ph/epfm/portal/iottelemetry/IoTTelemetryVersion.asp";
-String firmwareUrl      = "https://appgate.philcom.ph/epfm/portal/iottelemetry/IoTTelemetry.ino.bin";
+#define FW_VERSION "4.1.6"
+
+//Fetches from the main branch — not from Releases.
+const char* VERSION_JSON_URL = "https://raw.githubusercontent.com/ErickAsas/Main---IoTTelemetry/main/version.json";
 
 String currentVersion = FW_VERSION; // your current firmware version
 
@@ -113,6 +114,13 @@ unsigned long wifiFailWindowStart = 0;
 bool wifiEscalationInProgress = false;
 bool pendingPortalClose = false;
 bool wifiResumePending = false;
+
+// Access Point name used during device setup or recovery mode.
+const char* DEVICE_SETUP_AP_SSID = "DEVICE_SETUP_AP_NAME";
+
+// Access Point password used during device setup or recovery mode.
+// Must be at least 8 characters (WiFi requirement).
+const char* DEVICE_SETUP_AP_PASSWORD = "DEVICE_SETUP_AP_PASSWORD";
 
 WiFiManager wm;
 
@@ -177,21 +185,38 @@ int fadeDir = 1;
 int fadeValue = 100;
 bool blink = false;
 
+// 5. Web / REST / HTTP / JSON / TELEGRAM (VERY IMPORTANT)
 // ============================================================================
-// 5. Web / REST / HTTP / JSON /TELEGRAM
-// ============================================================================
-char IOTDeviceTelemetry[600] = "https://defaultdca43453b9634ff19f4d75c0dffda8.39.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/504d21d0f0154f6ca6386069f74a3e4d/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=uM1rjSNjqh9iuHPNSRwee6Z2B6v2iymP3CUcDJgKKc0";
-const char* IOTDeviceProfile = "https://defaultdca43453b9634ff19f4d75c0dffda8.39.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/1e78513b6a1342848581210deb3e20ce/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=ahxxCx1BNu4OOWwPHVjx1N0Vx8idP-2kBH8_J4pLQD8";
-const char* IOTDeviceTelemetryBackup = "https://appgate.philcom.ph/epfm/portal/mobileapp/iot_telemetry.asp";
-const char* usgsAPI = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson"; 
+
+// Primary cloud endpoint used to send IoTTelemetry sensor data to Microsoft Power Automate.
+char IOTDeviceTelemetry[600] = "https://your-dev-endpoint";
+
+// Cloud endpoint used to retrieve or synchronize IoTTelemetry device configuration profile.
+const char* IOTDeviceProfile = "https://your-profile-endpoint";
+
+// Secondary cloud endpoint used as fallback when primary telemetry delivery fails.
+const char* IOTDeviceTelemetryBackup = "https://your-backup-endpoint";
+
+// External earthquake data endpoint used to retrieve latest global seismic events (GeoJSON feed).
+const char* usgsAPI = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson";
+
 
 // ============================================================================
-// 6. Telegram Bot
+// 6. Telegram Bot Integration
 // ============================================================================
-String BOT_TOKEN = "5011899760:AAFClJ3i6kAuTVKPNHrJxbwzeK4l65uwTgs";
-String CHAT_ID = "-1002707560024";     //IoTTelemetry - for author monitoring
-String CHAT_ID1 = "-1001519628051";    //defaults to FASMAN - Northmin - Normal Viewers
-String CHAT_ID2 = "-1003122928011";    //defaults to FASMAN - Northmin Admin - Admin Viewers
+
+// Telegram Bot authentication token used for sending alerts and notifications.
+String BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN";
+
+// Primary Telegram chat ID used for system owner / developer monitoring.
+String CHAT_ID = "PRIMARY_MONITORING_CHAT_ID";
+
+// Secondary Telegram chat ID used for standard operational viewers.
+String CHAT_ID1 = "GENERAL_VIEWERS_CHAT_ID";
+
+// Tertiary Telegram chat ID used for administrative or elevated-level viewers.
+String CHAT_ID2 = "ADMIN_VIEWERS_CHAT_ID";
+
 
 bool CHATIDADMIN_ENABLED = false;
 bool CHAT_ID_ENABLED = true;
@@ -1262,93 +1287,117 @@ void checkWiFi() {
   }
 }
 
+bool isNewerVersion(const String& server, const String& current) {
+  int sMaj, sMin, sPat;
+  int cMaj, cMin, cPat;
+
+  if (sscanf(server.c_str(), "%d.%d.%d", &sMaj, &sMin, &sPat) != 3) return false;
+  if (sscanf(current.c_str(), "%d.%d.%d", &cMaj, &cMin, &cPat) != 3) return false;
+
+  if (sMaj != cMaj) return sMaj > cMaj;
+  if (sMin != cMin) return sMin > cMin;
+  return sPat > cPat;
+}
+
+String buildFirmwareURL(const String& tag, const String& bin) {
+  return "https://github.com/ErickAsas/Main---IoTTelemetry/releases/download/" +
+         tag + "/" + bin;
+}
+
 void checkRemoteOta() {
 
-  Serial.println("Remote OTA Check...");
+  Serial.println("⏳ Remote OTA Check...");
+
+  // === OTA SAFEGUARD ===
+  pinMode(GPIO_DHT, INPUT);      // Force GPIO4 High-Z
+  otaInProgress = true;   // Optional global flag
 
   HTTPClient http;
-  
-  // Step 1: Get remote version
-  http.begin(remoteVersionUrl);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.begin(VERSION_JSON_URL);
+
   int code = http.GET();
-  if(code == 200) {
-    String remoteVersion = http.getString();    
-    remoteVersion.trim();
-    Serial.println("Remote Version: " + remoteVersion);
-    String remoteVerStr = remoteVersion;
-    remoteVerStr.replace(".", "");   // "1.0.1" -> "101"
-    float remoteVerNum = remoteVerStr.toFloat();
-
-    String currentVerStr = currentVersion;
-    currentVerStr.replace(".", "");  // "1.0.0" -> "100"
-    float currentVerNum = currentVerStr.toFloat();
-
-    // Step 2: Compare versions
-    if (remoteVerNum > currentVerNum) {
-      Serial.println("New version available! Starting OTA...");
-      
-      // Step 3: Download firmware
-      http.begin(firmwareUrl);
-      int firmwareCode = http.GET();
-      if(firmwareCode == 200) {
-        int contentLength = http.getSize();
-        WiFiClient *stream = http.getStreamPtr();
-        if (contentLength <= 0) {
-          Serial.println("❌ Invalid firmware size");
-          http.end();
-          return;
-        }        
-        // Step 4: Begin OTA
-        if(!Update.begin(contentLength)) {
-          Update.printError(Serial);
-          return;
-        }
-
-        // Step 5: Write in chunks
-        size_t written = Update.writeStream(*stream);
-
-        if (written != contentLength) {
-          Serial.println("❌ OTA write incomplete");
-          Update.abort();
-          http.end();
-          return;
-        }
-
-        // Step 6: Finish OTA
-        if (!Update.end(true)) {
-          Serial.println("❌ OTA finalize failed");
-          Update.printError(Serial);
-          http.end();
-          return;
-        }
-
-        // ✅ Only NOW is OTA successful
-        Serial.println("✅ OTA written successfully. Rebooting...");
-
-        prefs.begin("IoTTelemetry", false);
-
-        // mark OTA success
-        prefs.putBool("ota.justUpdated", true);
-        prefs.putBool("ota.pending", true);
-
-        // DO NOT mark version.current here unless you’re certain
-        
-        prefs.putString("version.previous", currentVersion);
-        prefs.putString("version.current", remoteVersion);
-
-        prefs.end();
-        delay(100);
-        ESP.restart();
-      } else {
-        Serial.println("Failed to download remote version.");
-      }
-      http.end();
-    } else {
-      Serial.println("ESP32 firmware is up to date.");
-    }
-  } else {
-    Serial.println("Failed to get remote version.");
+  if (code != HTTP_CODE_OK) {
+    Serial.println("❌ Failed to fetch version.json");
+    http.end();
+    return;
   }
+
+  String payload = http.getString();
+  http.end();
+
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  DynamicJsonDocument doc(256);
+  #pragma GCC diagnostic pop
+
+  DeserializationError err = deserializeJson(doc, payload);
+  if (err) {
+    Serial.println("❌ JSON parse error");
+    return;
+  }
+
+  String remoteVersion = doc["version"].as<String>();
+  String tag           = doc["tag"].as<String>();
+  String bin           = doc["bin"].as<String>();
+
+  Serial.println("📦 Current FW : " FW_VERSION);
+  Serial.println("🌐 Remote FW  : " + remoteVersion);
+
+  if (!isNewerVersion(remoteVersion, FW_VERSION)) {
+    Serial.println("✅ ESP32 firmware is up to date.");
+    return;
+  }
+
+  Serial.println("⬆️ New firmware available!");
+
+  String firmwareUrl = buildFirmwareURL(tag, bin);
+  Serial.println("⬇️ Downloading:");
+  Serial.println(firmwareUrl);
+
+  // ==== OTA DOWNLOAD ====
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.begin(firmwareUrl);
+  int firmwareCode = http.GET();
+  if (firmwareCode != HTTP_CODE_OK) {
+    Serial.println("❌ Firmware download failed. Code: " + String(firmwareCode));
+    http.end();
+    return;
+  }
+
+  int contentLength = http.getSize();
+  WiFiClient* stream = http.getStreamPtr();
+
+  if (contentLength <= 0) {
+    Serial.println("Invalid firmware size.");
+    http.end();
+    return;
+  }
+
+  if (!Update.begin(contentLength)) {
+    Update.printError(Serial);
+    http.end();
+    return;
+  }
+
+  size_t written = Update.writeStream(*stream);
+  if (written != (size_t)contentLength) {
+    Serial.println("❌ Incomplete OTA write");
+    Update.abort();
+    http.end();
+    return;
+  }
+
+  if (Update.end(true)) {
+    Serial.println("✅ OTA successful. Rebooting...");
+    prefs.putBool("otaPending", true);
+    updateVersion(remoteVersion);
+    ESP.restart();
+  } else {
+    Update.printError(Serial);
+    otaInProgress = false;   // OTA failed, allow sensors again
+  }
+
   http.end();
 }
 
@@ -1539,7 +1588,10 @@ void EvaluateforceConfigPortal() {
   wm.setCaptivePortalEnable(true);
   wm.setSaveConfigCallback(saveConfigCallback);
 
-  wm.startConfigPortal("EZFMC_AP", "C@tchmeifyoucan@10000");
+  // Launches WiFi configuration access point used for initial device setup
+  // or recovery mode when no saved WiFi credentials are available.
+  wm.startConfigPortal(DEVICE_SETUP_AP_SSID, DEVICE_SETUP_AP_PASSWORD);
+
 }
 
 void stopConfigPortal() {
