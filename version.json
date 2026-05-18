@@ -1,6 +1,6 @@
 {
-  "version": "4.5.1",
-  "tag": "4.5.1",
+  "version": "4.5.2",
+  "tag": "4.5.2",
   "bin": "firmware.bin",
-  "notes": "Release 4.5.1"
+  "notes": "Release 4.5.2"
 }
